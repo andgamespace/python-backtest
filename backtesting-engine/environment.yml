@@ -1,0 +1,15 @@
+name: backtesting-engine
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12.8
+  - numpy
+  - pandas
+  - matplotlib
+  - scipy
+  - jupyterlab
+  - pytest
+  - ta-lib
+  - backtrader
+  - requests
+  - seaborn
