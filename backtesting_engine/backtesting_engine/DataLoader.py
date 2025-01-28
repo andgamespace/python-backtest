@@ -1,34 +1,71 @@
 from typing import List, Dict, Union, Optional, Tuple
 import pandas as pd
-import logger
+import logging
 import numpy as np
 from pathlib import Path
 from datetime import datetime
 
-class DataLoader(object, logger: Optional[logging.Logger] = None):
+class DataLoader():
     # Data loading interface for backtesting engine
     # Example: 
     # data_loader = DataLoader('data.csv')
     # data = data_loader.load_data("path/to/data.csv)
     # 
-    def __init__(self, data_path):
-        self.data_path = data_path
+    def __init__(self, data_paths, logger: Optional[logging.Logger] = None):
+        # make sure data_paths is a list
+        if not isinstance(data_paths, list):
+            data_paths = [data_paths]
+        # Initialize Datloader with optional custom logger
+        # Args: Optional custom logger, file path to data
+        # todo: [ ] add support for multiple data sources
+        # todo: [ ] *test* make sure that loading data works primarily for csv
+        # todo: [ ] add support for different data formats
+        # todo: [ ] keep track of loaded data
+        # todo: [ ] *test* make sure that other parts of the code can access the loaded data
+
+        self.data_paths = data_paths
         self.data = None
 
-    def load(self, path: Union[str, Path]) -> pd.DataFrame:
-        # Load financial data from the specified path
-        path = Path(path)
+    def setup_logger(self) -> logging.Logger:
+        #Configure default logger here
+        logger = logging.getLogger('DataLoader')
+        logger.setLevel(logging.INFO) # set minimum logging level
 
-        if not path.exist():
+        if not logger.handlers:
+            #create console handler 
+            handler = logging.StreamHandler()
+            #create formatter
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                )
+            #Add formatter to handler
+            formatter = logging.Formatter(formatter)
+            #add handler to logger
+            logger.addHandler(handler)
+        return logger
+    
+
+
+
+    def load_path_list(self, path_list: Union[str, Path]) -> pd.DataFrame:
+        # Load financial data from the specified path
+        # primary method for loading data
+        # Args: list of paths to data file
+        try:
+            # Info level - General Information
+            self.logger.info(f"Starting to load data from {path_list}")
+            path_list = Path(path)
+
+        if not path_list.exist():
             raise FileNotFoundError(f"File not found: {path}")
         
-        if path.suffix not in self._supported_formats:
+        if path_list.suffix not in self._supported_formats:
             raise ValueError(f"Unsupported format. Use {self._supported_formats}")
         
-        if path.suffix == '.csv':
-            self.data = pd.read_csv(path, parse_dates=['datetime'])
-        elif path.suffix == '.parquet':
-            self.data = pd.read_parquet(path)
+        if path_list.suffix == '.csv':
+            self.data = pd.read_csv(path_list, parse_dates=['datetime'])
+        elif path_list.suffix == '.parquet':
+            self.data = pd.read_parquet(path_list)
         
         self._validate_data()
         return self.data
