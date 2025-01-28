@@ -3,13 +3,14 @@ import pandas as pd
 import logger
 import numpy as np
 from pathlib import Path
+from datetime import datetime
 
 class DataLoader(object, logger: Optional[logging.Logger] = None):
-    """Data loading interface for backtesting engine
-    Example: 
-    data_loader = DataLoader('data.csv')
-    data = data_loader.load_data("path/to/data.csv)
-    """
+    # Data loading interface for backtesting engine
+    # Example: 
+    # data_loader = DataLoader('data.csv')
+    # data = data_loader.load_data("path/to/data.csv)
+    # 
     def __init__(self, data_path):
         self.data_path = data_path
         self.data = None
