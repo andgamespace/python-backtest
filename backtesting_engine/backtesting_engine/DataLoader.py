@@ -44,16 +44,37 @@ class DataLoader():
             handler = logging.StreamHandler()
             #create formatter
             formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
                 )
             #Add formatter to handler
             formatter = logging.Formatter(formatter)
             #add handler to logger
             logger.addHandler(handler)
+            logger.propagate = False # prevent double logging
         return logger
     
 
 
+    def _validate_paths(self, paths: Union[str, List[str]]) -> List[Path]:
+        # Validate paths
+        # Args: list of paths to data files
+        # Returns: list of Path objects
+        # [ ] todo: make sure that different data formats are supported
+        if isinstance(paths, (str, Path)):
+            paths = [paths]
+            # convert single path to a list
+        #convert strings to path objects
+        path_objects = [Path(p) for p in paths]
+        #Validate that the paths exist
+        for path in path_objects:
+            if not path.exists():
+                self.logger.error(f"File not found: {path}")
+                raise FileNotFoundError(f"File not found: {path}")
+            if path.suffix != '.csv':
+                self.logger.error(f"Unsupported format: {path}")
+                raise FileNotFoundError(f"Unsupported format. Use .csv")
+        return path_objects
 
     def load_path_list(self, path_list: Union[str, Path]) -> pd.DataFrame:
         # Load financial data from the specified path
