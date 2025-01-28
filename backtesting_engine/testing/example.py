@@ -1,0 +1,3 @@
+import backtesting_engine
+
+print(backtesting_engine.__version__)
