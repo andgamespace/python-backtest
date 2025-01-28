@@ -7,6 +7,10 @@ from datetime import datetime
 
 class DataLoader():
     # Data loading interface for backtesting engine
+    # handles multliple csv files per ticker, maintaining organized dataframes
+    # Attributes: 
+    # data (Dict[str, pd.DataFrame]): Dictionary of dataframes for each ticker/symbol
+    # logger(logging.Logger): Custom logger for DataLoader
     # Example: 
     # data_loader = DataLoader('data.csv')
     # data = data_loader.load_data("path/to/data.csv)
@@ -22,7 +26,11 @@ class DataLoader():
         # todo: [ ] add support for different data formats
         # todo: [ ] keep track of loaded data
         # todo: [ ] *test* make sure that other parts of the code can access the loaded data
-
+        self.data: Dict[str, pd.DataFrame] = {}
+        self.logger = logger or self.setup_logger() # set up logging
+         # required columns for data validation
+        self.__required_columns__ = ['datetime', 'open', 'high', 'low', 'close', 'volume']
+        # should ingnore case when checking for required columns  
         self.data_paths = data_paths
         self.data = None
 
