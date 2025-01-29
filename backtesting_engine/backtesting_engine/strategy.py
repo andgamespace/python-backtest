@@ -93,10 +93,10 @@ class Strategy(ABC):
     def preprocess_data(self, data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
         """Preprocess data before signal generation"""
         processed = {}
-        for symbol, df in data.items():
+        for ticker, df in data.items():
             # Add technical indicators
             df = self.add_indicators(df)
-            processed[symbol] = df
+            processed[ticker] = df
         return processed
         
     def add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
