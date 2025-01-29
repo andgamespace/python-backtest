@@ -45,7 +45,16 @@ class BacktestEngine:
         self.results = {}
         
     def run(self) -> Dict[str, pd.DataFrame]:
-        """Run backtest with loaded data and strategy"""
+        """
+        Run backtest over all symbols provided by the Strategy. The system will:
+        1. Extract data for each symbol from the DataLoader.
+        2. Generate signals via the Strategy.
+        3. For each timestamp in the primary symbol's index, apply signals for all symbols.
+        4. Store and return final results in a dictionary of DataFrames.
+
+        If data is missing for the primary symbol or the index is empty,
+        the backtest will terminate early.
+        """
         data = {}  # Store aligned data for all symbols
         
         # Initialize results storage
@@ -57,7 +66,8 @@ class BacktestEngine:
                 data[symbol] = self.data_loader.data[symbol]
         
         # Generate signals using strategy
-        signals = self.strategy.generate_signals(data)
+        initial_signals = self.strategy.generate_signals(data)
+        signals = self.strategy.finalize_signals(initial_signals)
         
         # Store signals alongside data for plotting
         for symbol in self.strategy.symbols:
@@ -65,16 +75,20 @@ class BacktestEngine:
                 self.results[symbol] = data[symbol].copy()
                 self.results[symbol]['signal'] = signals[symbol]
         
-        # Process signals and update portfolio
+        # Ensure the primary symbol has data
+        if not data[self.strategy.symbols[0]].index.size:
+            print("No data found for the primary symbol. Unable to run backtest.")
+            return {}
+        
+        # Process signals for each timestamp across all symbols
         for timestamp in data[self.strategy.symbols[0]].index:
             for symbol in self.strategy.symbols:
+                if symbol not in data:
+                    continue
                 if signals[symbol][timestamp] != 0:
-                    # Implement trading logic here
                     price = data[symbol].loc[timestamp, 'close']
                     signal = signals[symbol][timestamp]
                     self.execute_trade(symbol, signal, price)
-                    
-            # Record portfolio state
             self.portfolio.record_state()
         
         # Example usage of jit function (optional):
@@ -98,7 +112,15 @@ class BacktestEngine:
         # This is a simplified example; in a complete system, we'd incorporate
         # JIT across all symbols and timestamps more comprehensively.
         
-        return self.calculate_results()
+        results_dict = self.calculate_results()
+
+        # After final data processing, retrieve and display statistics
+        stats = self.portfolio.get_statistics()
+        print("Performance Summary:")
+        for k, v in stats.items():
+            print(f"{k.capitalize()}: {v}")
+
+        return results_dict
     
     def execute_trade(self, symbol: str, signal: int, price: float) -> None:
         """
@@ -125,7 +147,9 @@ class BacktestEngine:
             self.portfolio.update_position(symbol, -sell_amount, trade_price)
     
     def calculate_results(self) -> Dict[str, pd.DataFrame]:
-        """Calculate and return backtest results"""
+        """
+        Calculate and return backtest results with simpler performance columns.
+        """
         results = pd.DataFrame(self.portfolio.history)
         results.set_index('timestamp', inplace=True)
         
@@ -186,5 +210,39 @@ class BacktestEngine:
         ax.legend()
         ax.set_ylabel("Value")
         ax.set_title("Portfolio Value Over Time")
+        plt.tight_layout()
+        plt.show()
+
+    def plot_performance(self, summary: pd.DataFrame) -> None:
+        """
+        Plot portfolio total value vs. time in one figure,
+        and each symbol's price plus buy/sell signals in another.
+        """
+        import matplotlib.pyplot as plt
+
+        # 1) Portfolio value over time
+        fig, ax = plt.subplots(figsize=(10, 4))
+        if 'total_value' not in summary.columns:
+            print("No 'total_value' in summary, cannot plot portfolio performance.")
+            return
+        ax.plot(summary.index, summary['total_value'], label='Portfolio Value', color='blue')
+        ax.set_title("Portfolio Value Over Time")
+        ax.set_ylabel("Value")
+        ax.legend()
+        plt.tight_layout()
+        plt.show()
+
+        # 2) Each symbol's price with signals
+        fig, ax = plt.subplots(figsize=(10, 6))
+        for symbol, df in self.results.items():
+            if 'close' in df.columns:
+                ax.plot(df.index, df['close'], label=f'{symbol} Price')
+                buys = df[df['signal'] > 0]
+                sells = df[df['signal'] < 0]
+                ax.scatter(buys.index, buys['close'], marker='^', color='g', alpha=0.6)
+                ax.scatter(sells.index, sells['close'], marker='v', color='r', alpha=0.6)
+        ax.set_title("Symbol Prices with Buy/Sell Signals")
+        ax.set_ylabel("Price")
+        ax.legend()
         plt.tight_layout()
         plt.show()

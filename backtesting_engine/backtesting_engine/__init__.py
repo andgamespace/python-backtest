@@ -1,4 +1,7 @@
-# __init__.py
+"""
+Initialization module for the backtesting_engine package.
+This makes classes and functions available at package level.
+"""
 
 # This is the initialization file for the backtesting_engine package.
 # You can import necessary modules and initialize package-level variables here.

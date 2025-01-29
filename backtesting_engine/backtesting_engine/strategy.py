@@ -39,13 +39,9 @@ class Strategy(ABC):
         
     @abstractmethod
     def generate_signals(self, data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
-        """Generate trading signals for each symbol
-        
-        Args:
-            data: Dict mapping symbols to OHLCV DataFrames
-            
-        Returns:
-            Dict mapping symbols to signal series (-1=sell, 0=hold, 1=buy)
+        """
+        Generate trading signals for each symbol in 'data'. Return a dict of symbol -> pd.Series,
+        where each Series index matches the DataFrame dates, and the values are -1 / 0 / +1.
         """
         pass
         
@@ -107,3 +103,10 @@ class Strategy(ABC):
         """Add technical indicators to dataframe"""
         # Override in concrete strategies
         return df
+
+    def finalize_signals(self, signals: Dict[str, pd.Series]) -> Dict[str, pd.Series]:
+        """
+        Optionally refine or filter signals after initial generation.
+        Override this in concrete strategies if needed.
+        """
+        return signals

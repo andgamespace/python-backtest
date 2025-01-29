@@ -6,9 +6,14 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class DataLoader:
+    """
+    Loads and stores data in self.data, a dictionary of:
+        symbol -> pd.DataFrame with DateTimeIndex
+    Each DataFrame contains columns: open, high, low, close, volume,
+    resampled to the specified interval, ensuring consistency across symbols.
+    """
     def __init__(self, cache_data: bool = True):
         self.data: Dict[str, pd.DataFrame] = {}
-        self.column_mappings: Dict[str, Dict[str, str]] = {}
         self.logger = self._setup_logger()
         self.cache_data = cache_data
         
@@ -21,63 +26,56 @@ class DataLoader:
             logger.addHandler(handler)
         return logger
 
-    def _detect_columns(self, df: pd.DataFrame) -> Dict[str, str]:
-        """Map file columns to standardized names"""
-        required = {'open', 'high', 'low', 'close', 'volume'}
-        mapping = {}
+    def load_data(self, ticker: str, file_paths: Union[str, List[str]], interval: str = '5m',
+                 file_structure: Optional[List[str]] = None) -> pd.DataFrame:
+        """
+        Load and process data for a single ticker from one or multiple CSV files.
+        Uses the provided file_structure to standardize data.
+        :param ticker: The stock ticker symbol.
+        :param file_paths: List of CSV file paths containing the data.
+        :param interval: Resampling interval (default is '5m').
+        :param file_structure: List defining the order and names of columns.
+                               Default is ['datetime', 'open', 'high', 'low', 'close', 'volume'].
+        """
+        file_structure = file_structure or ['datetime', 'open', 'high', 'low', 'close', 'volume']
         
-        # Convert all column names to lowercase for comparison
-        cols = {col.lower(): col for col in df.columns}
-        
-        # Direct matches
-        for req in required:
-            if req in cols:
-                mapping[req] = cols[req]
-                
-        # Common variations
-        variations = {
-            'open': ['open_price', 'opening', 'op'],
-            'high': ['high_price', 'highest', 'hp'],
-            'low': ['low_price', 'lowest', 'lp'],
-            'close': ['close_price', 'closing', 'cp'],
-            'volume': ['vol', 'quantity', 'qty']
-        }
-        
-        # Try variations for unmapped columns
-        for req, vars in variations.items():
-            if req not in mapping:
-                for var in vars:
-                    if var in cols:
-                        mapping[req] = cols[var]
-                        break
-                        
-        return mapping
-
-    def load_data(self, symbol: str, paths: Union[str, List[str]], interval: str = '1min') -> pd.DataFrame:
-        """Load and process data for a single symbol"""
-        if isinstance(paths, str):
-            paths = [paths]
+        if isinstance(file_paths, str):
+            file_paths = [file_paths]
             
         dfs = []
-        first_file = True
         
-        for path in paths:
-            df = pd.read_csv(path)
+        for path in file_paths:
+            try:
+                df = pd.read_csv(path)
+            except FileNotFoundError:
+                self.logger.error(f"File not found: {path}")
+                continue
+            except Exception as e:
+                self.logger.error(f"Error reading {path}: {str(e)}")
+                continue
             
-            if first_file:
-                # Detect column structure from first file
-                self.column_mappings[symbol] = self._detect_columns(df)
-                first_file = False
-                
-            # Rename columns using detected mapping
-            df = df.rename(columns=self.column_mappings[symbol])
+            # Rename columns based on provided file_structure
+            if len(df.columns) >= len(file_structure):
+                rename_mapping = {original: new for original, new in zip(df.columns[:len(file_structure)], file_structure)}
+                df = df.rename(columns=rename_mapping)
+            else:
+                self.logger.warning(f"Column mismatch in {path} for ticker {ticker}")
+                continue  # Skip files that don't match the expected structure
             
-            # Ensure datetime column exists
-            date_cols = [col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()]
-            if date_cols:
-                df['datetime'] = pd.to_datetime(df[date_cols[0]])
-            
+            # Ensure datetime column is parsed
+            try:
+                df['datetime'] = pd.to_datetime(df['datetime'], errors='coerce')
+                invalid_count = df['datetime'].isna().sum()
+                if invalid_count > 0:
+                    self.logger.warning(f"{invalid_count} invalid datetime entries found in {path}, setting them to NaT.")
+            except Exception as e:
+                self.logger.error(f"Datetime parsing failed for {path}: {str(e)}")
+                continue  # Skip files with parsing errors
+
             dfs.append(df)
+            
+        if not dfs:
+            raise ValueError(f"No valid data loaded for ticker {ticker}")
             
         # Combine all files
         final_df = pd.concat(dfs, ignore_index=True)
@@ -86,7 +84,7 @@ class DataLoader:
         final_df = self._standardize_dataframe(final_df, interval)
         
         if self.cache_data:
-            self.data[symbol] = final_df
+            self.data[ticker] = final_df
             
         return final_df
         
@@ -119,21 +117,23 @@ class DataLoader:
         return df
 
     def load_multiple_symbols(self, symbol_paths: Dict[str, Union[str, List[str]]], 
-                            interval: str = '1min') -> Dict[str, pd.DataFrame]:
-        """Load data for multiple symbols in parallel"""
+                              interval: str = '1m',
+                              file_structure: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
+        """Load data for multiple tickers in parallel"""
+        file_structure = file_structure or ['datetime', 'open', 'high', 'low', 'close', 'volume']
         with ThreadPoolExecutor() as executor:
             futures = {
-                executor.submit(self.load_data, symbol, paths, interval): symbol 
-                for symbol, paths in symbol_paths.items()
+                executor.submit(self.load_data, ticker, paths, interval, file_structure): ticker 
+                for ticker, paths in symbol_paths.items()
             }
             
             results = {}
             for future in as_completed(futures):
-                symbol = futures[future]
+                ticker = futures[future]
                 try:
-                    results[symbol] = future.result()
+                    results[ticker] = future.result()
                 except Exception as e:
-                    self.logger.error(f"Failed to load {symbol}: {str(e)}")
+                    self.logger.error(f"Failed to load {ticker}: {str(e)}")
                     
         return results
 
