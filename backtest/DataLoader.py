@@ -10,7 +10,6 @@ class DataLoader:
         self.data: Dict[str, pd.DataFrame] = {}
         self.logger = self._setup_logger()
         self.cache_data = cache_data
-        self.logger = self.__setup_logger()
 
     def _setup_logger(self) -> logging.Logger:
         logger = logging.getLogger('DataLoader')
