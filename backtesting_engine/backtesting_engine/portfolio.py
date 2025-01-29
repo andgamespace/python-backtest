@@ -11,14 +11,30 @@ class Position:
     current_price: float = 0.0
 
 class Portfolio:
-    def __init__(self, initial_capital: float = 100000):
+    def __init__(self, initial_capital: float = 100000, commission: float = 0.0, slippage: float = 0.0):
+        """
+        :param initial_capital: starting cash
+        :param commission: fixed percentage for each trade
+        :param slippage: artificial price change to simulate real market conditions
+        """
         self.initial_capital = initial_capital
         self.cash = initial_capital
+        self.commission = commission
+        self.slippage = slippage
         self.positions: Dict[str, Position] = {}
         self.history: List[Dict] = []
         
     def update_position(self, symbol: str, quantity: float, price: float) -> None:
-        """Update or create a position for a symbol"""
+        """
+        Update position with slippage and commission.
+        :param symbol: symbol to trade
+        :param quantity: number of shares to buy (positive) or sell (negative)
+        :param price: reference price for the trade
+        """
+        trade_cost = quantity * price
+        commission_cost = abs(trade_cost) * self.commission
+        self.cash -= commission_cost
+        
         if symbol not in self.positions:
             self.positions[symbol] = Position(symbol, quantity, price)
         else:

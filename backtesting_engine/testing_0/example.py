@@ -1,3 +1,3 @@
 import backtesting_engine
-
+from backtesting_engine import DataLoader, BacktestEngine
 print(backtesting_engine.__version__)

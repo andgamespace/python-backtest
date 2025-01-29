@@ -6,7 +6,12 @@
 # Example import statements (uncomment and modify as needed):
 # from .module1 import Class1, function1
 # from .module2 import Class2, function2
+from .engine import BacktestEngine
+from .portfolio import Portfolio
+from .strategy import Strategy
 from .DataLoader import DataLoader
+
+__all__ = ["BacktestEngine", "Portfolio", "Strategy", "DataLoader"]
 
 # Example package-level variable (modify as needed):
 # package_variable = "default_value"

@@ -1,192 +1,161 @@
 from typing import List, Dict, Union, Optional, Tuple
 import pandas as pd
-import logging
 import numpy as np
+import logging
 from pathlib import Path
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class DataLoader:
-    """
-    Data loading interface for backtesting engine.
-    Handles multiple data files per ticker, maintaining organized dataframes.
-    
-    Attributes:
-        data (Dict[str, pd.DataFrame]): Dictionary of dataframes for each ticker/symbol
-        logger (logging.Logger): Custom logger for DataLoader
-    example:
-        data_loader = DataLoader(data_paths='data/TICKER.csv')
-    """
-   
-    def __init__(self, data_paths, logger: Optional[logging.Logger] = None):
-        # Convert single path to list if necessary
-        self.data_paths = [data_paths] if not isinstance(data_paths, list) else data_paths
-        
-        # Initialize storage for loaded data
+    def __init__(self, cache_data: bool = True):
         self.data: Dict[str, pd.DataFrame] = {}
-        self.logger = logger or self._setup_logger()
+        self.column_mappings: Dict[str, Dict[str, str]] = {}
+        self.logger = self._setup_logger()
+        self.cache_data = cache_data
         
-        # Required columns for data validation (case-insensitive)
-        self._required_columns = ['datetime', 'open', 'high', 'low', 'close', 'volume']
-        
-        # Supported file extensions (based on pandas' capabilities)
-        self._readable_formats = {
-            '.csv': pd.read_csv,
-            '.xlsx': pd.read_excel,
-            '.xls': pd.read_excel,
-            '.parquet': pd.read_parquet,
-            '.feather': pd.read_feather,
-            '.pkl': pd.read_pickle,
-            '.h5': pd.read_hdf
-        }
-
     def _setup_logger(self) -> logging.Logger:
-        """Configure default logger with proper formatting."""
         logger = logging.getLogger('DataLoader')
-        logger.setLevel(logging.INFO)
-        
         if not logger.handlers:
-            #Create console handler
             handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
-            )
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
             handler.setFormatter(formatter)
             logger.addHandler(handler)
-            logger.propagate = False #prevent double logging
         return logger
 
-    def _validate_paths(self, paths: Union[str, List[str]]) -> List[Path]:
-        """
-        Validate and convert file paths to Path objects.
+    def _detect_columns(self, df: pd.DataFrame) -> Dict[str, str]:
+        """Map file columns to standardized names"""
+        required = {'open', 'high', 'low', 'close', 'volume'}
+        mapping = {}
         
-        Args:
-            paths: Single path or list of paths to data files
-            
-        Returns:
-            List of validated Path objects
-        todo: [ ] test and make sure it works 
-        """
-        # Convert single path to list if necessary
-        if isinstance(paths, (str, Path)):
+        # Convert all column names to lowercase for comparison
+        cols = {col.lower(): col for col in df.columns}
+        
+        # Direct matches
+        for req in required:
+            if req in cols:
+                mapping[req] = cols[req]
+                
+        # Common variations
+        variations = {
+            'open': ['open_price', 'opening', 'op'],
+            'high': ['high_price', 'highest', 'hp'],
+            'low': ['low_price', 'lowest', 'lp'],
+            'close': ['close_price', 'closing', 'cp'],
+            'volume': ['vol', 'quantity', 'qty']
+        }
+        
+        # Try variations for unmapped columns
+        for req, vars in variations.items():
+            if req not in mapping:
+                for var in vars:
+                    if var in cols:
+                        mapping[req] = cols[var]
+                        break
+                        
+        return mapping
+
+    def load_data(self, symbol: str, paths: Union[str, List[str]], interval: str = '1min') -> pd.DataFrame:
+        """Load and process data for a single symbol"""
+        if isinstance(paths, str):
             paths = [paths]
             
-        # Convert to Path objects
-        path_objects = [Path(p) for p in paths]
+        dfs = []
+        first_file = True
         
-        # Validate paths
-        for path in path_objects:
-            if not path.exists():
-                self.logger.error(f"File not found: {path}")
-                raise FileNotFoundError(f"File not found: {path}")
+        for path in paths:
+            df = pd.read_csv(path)
+            
+            if first_file:
+                # Detect column structure from first file
+                self.column_mappings[symbol] = self._detect_columns(df)
+                first_file = False
                 
-        return path_objects
-
-    def _read_file(self, path: Path) -> Optional[pd.DataFrame]:
-        """
-        Read data file using appropriate pandas reader based on file extension.
-        
-        Args:
-            path: Path to data file
+            # Rename columns using detected mapping
+            df = df.rename(columns=self.column_mappings[symbol])
             
-        Returns:
-            DataFrame or None if reading fails
-        todo; [ ] test and make sure it works
-        """
-        try:
-            file_extension = path.suffix.lower()
-            # Get appropriate reader function
-            reader_func = self._readable_formats.get(file_extension)
+            # Ensure datetime column exists
+            date_cols = [col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()]
+            if date_cols:
+                df['datetime'] = pd.to_datetime(df[date_cols[0]])
             
-            if reader_func is None:
-                supported_formats = ", ".join(self._readable_formats.keys())
-                self.logger.warning(
-                    f"Unsupported file format: {file_extension}. "
-                    f"Attempting to use pd.read_csv. "
-                    f"Supported formats are: {supported_formats}"
-                )
-                reader_func = pd.read_csv
-            # Read the file
-            df = reader_func(path)
-            # Try to parse datetime column if it exists
-            if 'datetime' in df.columns:
-                try:
-                    df['datetime'] = pd.to_datetime(df['datetime'])
-                except Exception as e:
-                    self.logger.warning(f"Failed to parse datetime column: {e}")
+            dfs.append(df)
             
-            self.logger.info(f"Successfully read {path}")
-            return df
+        # Combine all files
+        final_df = pd.concat(dfs, ignore_index=True)
         
-        except Exception as e:
-            self.logger.error(f"Error reading {path}: {str(e)}")
-            return None
-
-    def _validate_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """  Validate and clean loaded data.
-        Args:
-            df: DataFrame to validate   
-        Returns:
-            Validated and cleaned DataFrame  """
-        if df is None or df.empty:
-            raise ValueError("No data loaded or empty DataFrame")
-        # Convert column names to lowercase for case-insensitive comparison
-        df.columns = df.columns.str.lower()
-        # Check for required columns (case-insensitive)
-        missing_cols = set(self._required_columns) - set(df.columns)
-        if missing_cols:
-            self.logger.warning(f"Missing required columns: {missing_cols}")
-            return df
+        # Standardize the dataframe
+        final_df = self._standardize_dataframe(final_df, interval)
         
-        # Ensure numeric columns are properly typed
-        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+        if self.cache_data:
+            self.data[symbol] = final_df
+            
+        return final_df
+        
+    def _standardize_dataframe(self, df: pd.DataFrame, interval: str) -> pd.DataFrame:
+        """Standardize dataframe format"""
+        # Ensure required columns exist
+        required_cols = ['datetime', 'open', 'high', 'low', 'close', 'volume']
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column: {col}")
+                
+        # Set datetime as index
+        df = df.set_index('datetime')
+        
+        # Sort by datetime
+        df = df.sort_index()
+        
+        # Remove duplicates
+        df = df[~df.index.duplicated(keep='first')]
+        
+        # Resample to desired interval
+        df = df.resample(interval).agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
         
         return df
 
-    def load_path_list(self, path_list: Union[str, List[str]], symbol: str = None) -> pd.DataFrame:
-        """Load financial data from specified path(s).
-        Args:
-            path_list: Path or list of paths to data files
-            symbol: Optional symbol/ticker for the data
-        Returns:
-            Loaded and validated DataFrame """
-        try:
-            self.logger.info(f"Starting to load data from {path_list}")
+    def load_multiple_symbols(self, symbol_paths: Dict[str, Union[str, List[str]]], 
+                            interval: str = '1min') -> Dict[str, pd.DataFrame]:
+        """Load data for multiple symbols in parallel"""
+        with ThreadPoolExecutor() as executor:
+            futures = {
+                executor.submit(self.load_data, symbol, paths, interval): symbol 
+                for symbol, paths in symbol_paths.items()
+            }
             
-            # Validate paths
-            paths = self._validate_paths(path_list)
+            results = {}
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    results[symbol] = future.result()
+                except Exception as e:
+                    self.logger.error(f"Failed to load {symbol}: {str(e)}")
+                    
+        return results
+
+    def get_aligned_data(self, symbols: List[str] = None) -> Dict[str, pd.DataFrame]:
+        """Get data aligned to common timestamps"""
+        if symbols is None:
+            symbols = list(self.data.keys())
             
-            # Read and combine all files
-            dfs = []
-            for path in paths:
-                df = self._read_file(path)
-                if df is not None:
-                    dfs.append(df)
-            
-            if not dfs:
-                raise ValueError("No valid data loaded from provided paths")
-            
-            # Combine all dataframes
-            combined_df = pd.concat(dfs, ignore_index=True)
-            
-            # Validate and clean data
-            combined_df = self._validate_data(combined_df)
-            
-            # Add symbol if provided
-            if symbol:
-                combined_df['symbol'] = symbol
-                self.data[symbol] = combined_df
-            
-            self.logger.info(
-                f"Successfully loaded {len(paths)} files. "
-                f"Total rows: {len(combined_df)}"
-            )
-            
-            return combined_df
-            
-        except Exception as e:
-            self.logger.error(f"Error loading data: {str(e)}")
-            raise
+        # Find common index
+        common_index = None
+        for symbol in symbols:
+            if symbol not in self.data:
+                raise KeyError(f"No data loaded for symbol {symbol}")
+            if common_index is None:
+                common_index = self.data[symbol].index
+            else:
+                common_index = common_index.intersection(self.data[symbol].index)
+                
+        # Align all dataframes
+        aligned_data = {
+            symbol: self.data[symbol].loc[common_index] 
+            for symbol in symbols
+        }
+        
+        return aligned_data
