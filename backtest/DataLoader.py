@@ -23,6 +23,7 @@ class DataLoader:
         if not logger.handlers:
             logger.addHandler(ch)
         return logger
+
     def read_stock_data(
         self, 
         file_paths: List[str], 
@@ -51,11 +52,11 @@ class DataLoader:
                     usecols=structure
                 )
                 # might need to convert to pd.datetime if not already
-                self.logger.info(f"Succesfully read {file_path}")
+                self.logger.info(f"Successfully read {file_path}")
                 dfs.append(df)
             except Exception as e:
-                self.logger.error(f"Error reading {file_path}")
-                dfs.append(df)
+                self.logger.error(f"Error reading {file_path}: {e}")
+                # Do not append df since it was not successfully read
         if dfs:
             combined_df = pd.concat(dfs, ignore_index=True)
             # Sort by 'datetime' in ascending order
@@ -94,3 +95,37 @@ class DataLoader:
             self.logger.info(f"Data for {stock_symbol} loaded successfully.")
         else:
             self.logger.warning(f"No data loaded for {stock_symbol}.")
+
+    def get_latest_price(self, ticker: str) -> float:
+        """Get most recent price for a ticker."""
+        if ticker in self.data:
+            return self.data[ticker]['close'].iloc[-1]
+        return None
+
+    def get_price_history(self, ticker: str, lookback: int = None) -> pd.DataFrame:
+        """Get price history for a ticker with optional lookback period."""
+        if ticker not in self.data:
+            return None
+        if lookback:
+            return self.data[ticker].tail(lookback)
+        return self.data[ticker]
+
+    def get_features(self, ticker: str) -> pd.DataFrame:
+        """
+        Get feature matrix suitable for ML models.
+        Basic features: returns, rolling means, volatility
+        """
+        if ticker not in self.data:
+            return None
+            
+        df = self.data[ticker].copy()
+        
+        # Calculate returns
+        df['returns'] = df['close'].pct_change()
+        
+        # Add basic technical indicators
+        df['SMA_5'] = df['close'].rolling(5).mean()
+        df['SMA_20'] = df['close'].rolling(20).mean()
+        df['volatility'] = df['returns'].rolling(20).std()
+        
+        return df.dropna()
