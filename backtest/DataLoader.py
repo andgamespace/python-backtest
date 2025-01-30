@@ -69,16 +69,9 @@ class DataLoader:
             self.logger.warning(f"No dataframes to concatenate for {stock_symbol}.")
             return pd.DataFrame()  # Return empty DataFrame if no dataframes were read
 
-    def load_ticker(
-        self, 
-        stock_symbol: str, 
-        file_paths: List[str], 
-        structure: List[str] = ['datetime', 'open', 'high', 'low', 'close', 'volume'], 
-        sep: str = ';'
-    ) -> None:
+    def load_ticker(self, stock_symbol: str, file_paths: List[str], structure: List[str] = ['datetime', 'open', 'high', 'low', 'close', 'volume'], sep: str = ';') -> None:
         """
         Loads data for a specific stock ticker and stores it in the data dictionary.
-        Includes technical indicators.
         """
         if self.cache_data and stock_symbol in self.data:
             self.logger.info(f"Data for {stock_symbol} is already loaded and cached.")
@@ -88,12 +81,17 @@ class DataLoader:
         combined_df = self.read_stock_data(file_paths, stock_symbol, structure, sep)
         
         if not combined_df.empty:
-            features_df = self.get_features(stock_symbol)
-            if features_df is not None and not features_df.empty:
-                self.data[stock_symbol] = features_df
-                self.logger.info(f"Data with features for {stock_symbol} loaded successfully.")
-            else:
-                self.logger.warning(f"Feature generation failed for {stock_symbol}.")
+            try:
+                self.data[stock_symbol] = combined_df  # Store the raw data first
+                features_df = self.get_features(combined_df)  # Pass DataFrame directly
+                if features_df is not None and not features_df.empty:
+                    self.data[stock_symbol] = features_df  # Update with features
+                    self.logger.info(f"Data with features for {stock_symbol} loaded successfully.")
+                else:
+                    self.logger.warning(f"Feature generation failed for {stock_symbol}, using raw data.")
+            except Exception as e:
+                self.logger.error(f"Error during feature generation for {stock_symbol}: {e}")
+                # Keep the raw data if feature generation fails
         else:
             self.logger.warning(f"No data loaded for {stock_symbol}.")
 
@@ -111,40 +109,54 @@ class DataLoader:
             return self.data[ticker].tail(lookback)
         return self.data[ticker]
 
-    def get_features(self, ticker: str) -> pd.DataFrame:
+    def get_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Get feature matrix suitable for ML models.
-        Includes returns, rolling means, volatility, RSI, MACD, Bollinger Bands.
         """
-        if ticker not in self.data:
+        if df.empty:
             return None
             
-        df = self.data[ticker].copy()
+        df = df.copy()
         
-        # Calculate returns
-        df['returns'] = df['close'].pct_change()
-        
-        # Add basic technical indicators
-        df['SMA_5'] = df['close'].rolling(window=5).mean()
-        df['SMA_20'] = df['close'].rolling(window=20).mean()
-        df['volatility'] = df['returns'].rolling(window=20).std()
-        
-        # Add RSI
-        df['RSI'] = talib.RSI(df['close'], timeperiod=14)
-        
-        # Add MACD
-        macd, macdsignal, macdhist = talib.MACD(df['close'], fastperiod=12, slowperiod=26, signalperiod=9)
-        df['MACD'] = macd
-        df['MACD_Signal'] = macdsignal
-        
-        # Add Bollinger Bands
-        upperband, middleband, lowerband = talib.BBANDS(df['close'], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
-        df['BB_upper'] = upperband
-        df['BB_middle'] = middleband
-        df['BB_lower'] = lowerband
-        
-        # Ensure 'datetime' is datetime type
-        if not pd.api.types.is_datetime64_any_dtype(df['datetime']):
-            df['datetime'] = pd.to_datetime(df['datetime'])
-        
-        return df.dropna()
+        try:
+            # Calculate returns
+            df['returns'] = df['close'].pct_change()
+            
+            # Add basic technical indicators
+            df['SMA_5'] = df['close'].rolling(window=5).mean()
+            df['SMA_20'] = df['close'].rolling(window=20).mean()
+            df['volatility'] = df['returns'].rolling(window=20).std()
+            
+            # Add RSI
+            df['RSI'] = talib.RSI(df['close'].values, timeperiod=14)
+            
+            # Add MACD
+            macd, macdsignal, macdhist = talib.MACD(
+                df['close'].values, 
+                fastperiod=12, 
+                slowperiod=26, 
+                signalperiod=9
+            )
+            df['MACD'] = macd
+            df['MACD_Signal'] = macdsignal
+            
+            # Add Bollinger Bands
+            upperband, middleband, lowerband = talib.BBANDS(
+                df['close'].values, 
+                timeperiod=20,
+                nbdevup=2,
+                nbdevdn=2,
+                matype=0
+            )
+            df['BB_upper'] = upperband
+            df['BB_middle'] = middleband
+            df['BB_lower'] = lowerband
+            
+            # Ensure datetime is correct
+            if not pd.api.types.is_datetime64_any_dtype(df['datetime']):
+                df['datetime'] = pd.to_datetime(df['datetime'])
+            
+            return df
+        except Exception as e:
+            self.logger.error(f"Error calculating features: {e}")
+            return None

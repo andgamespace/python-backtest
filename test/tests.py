@@ -99,12 +99,17 @@ class TestBacktestingFramework(unittest.TestCase):
         """
         Test signal generation of the strategies.
         """
+        # Create sample data with consistent lengths
+        sample_length = 5
+        dates = pd.date_range(start='2020-01-01', periods=sample_length)
+        
         # Simulate market data up to a specific point for RSIStrategy
         rsi_market_data = {
             'close': 25,
             'df': pd.DataFrame({
+                'datetime': dates,
                 'close': [28, 27, 26, 25, 24],
-                'RSI': [35, 32, 30, 28, 25]  # Added RSI column
+                'RSI': [35, 32, 30, 28, 25]
             })
         }
         rsi_signal = self.strategies[1].generate_signal('AMD', rsi_market_data)
@@ -112,22 +117,26 @@ class TestBacktestingFramework(unittest.TestCase):
 
         # Simulate market data for MACDStrategy
         macd_market_data = {
+            'close': 150,
             'df': pd.DataFrame({
-                'MACD': [1.2, 1.3, 1.4],
-                'MACD_Signal': [1.1, 1.2, 1.3]
+                'datetime': dates,
+                'close': [150, 151, 152, 153, 154],
+                'MACD': [1.2, 1.3, 1.4, 1.5, 1.6],
+                'MACD_Signal': [1.1, 1.2, 1.3, 1.4, 1.5]
             })
         }
         macd_signal = self.strategies[2].generate_signal('NVDA', macd_market_data)
         self.assertIn(macd_signal, ['BUY', 'SELL', None])
 
-        # Simulate market data for BollingerBandsStrategy with 'close' included
+        # Simulate market data for BollingerBandsStrategy
         bb_market_data = {
             'close': 95,
             'df': pd.DataFrame({
+                'datetime': dates,
                 'close': [90, 92, 94, 96, 98],
-                'BB_upper': [100],
-                'BB_middle': [90],
-                'BB_lower': [80]
+                'BB_upper': [100, 101, 102, 103, 104],
+                'BB_middle': [90, 91, 92, 93, 94],
+                'BB_lower': [80, 81, 82, 83, 84]
             })
         }
         bb_signal = self.strategies[3].generate_signal('AAPL', bb_market_data)
