@@ -27,8 +27,11 @@ class Position:
     def market_value(self) -> float:
         """Calculate current market value of position."""
         if self.current_price:
-            return self.quantity * self.current_price
-        return self.quantity * self.entry_price
+            value = self.quantity * self.current_price
+        else:
+            value = self.quantity * self.entry_price
+        logger.info(f"Market value for {self.ticker}: {value}")
+        return value
 
     def unrealized_pnl(self) -> float:
         """Calculate unrealized profit/loss."""
@@ -39,3 +42,4 @@ class Position:
     def update_price(self, new_price: float):
         """Update current price."""
         self.current_price = new_price
+        logger.info(f"Updated price for {self.ticker} to {new_price}")

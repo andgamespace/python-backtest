@@ -1,5 +1,6 @@
 import logging
 from typing import Dict, Any
+import pandas as pd
 
 class Engine:
     """
@@ -30,31 +31,38 @@ class Engine:
 
     def run_backtest(self, tickers):
         """
-        Main loop over each ticker's data to simulate trades.
+        Main loop over each timestamp across all tickers to simulate trades concurrently.
 
         Args:
             tickers (list): List of stock symbols to run the strategy on.
         """
         self.logger.info(f"Starting backtest for tickers: {tickers}")
-        for ticker in tickers:
-            df = self._get_data(ticker)
-            if df.empty:
-                self.logger.warning(f"No data for ticker {ticker}, skipping.")
-                continue
 
-            self.logger.info(f"Running strategy for ticker {ticker}")
-            # Iterate over each row (timestamp) in the data
-            for index in range(1, len(df)):
-                current_data = df.iloc[:index+1]
-                row = df.iloc[index]
-                market_data = {'close': row['close'], 'df': current_data}
-                
-                # 1. Generate signals based on current market data
+        # Determine the maximum length of data among all tickers
+        max_length = max(len(self._get_data(ticker)) for ticker in tickers)
+
+        # Iterate over each timestamp index
+        for idx in range(max_length):
+            for ticker in tickers:
+                df = self._get_data(ticker)
+                if df.empty or idx >= len(df):
+                    continue
+
+                current_row = df.iloc[idx]
+                current_data = df.iloc[:idx+1]
+
+                # Ensure 'datetime' is datetime type
+                if not pd.api.types.is_datetime64_any_dtype(current_data['datetime']):
+                    current_data['datetime'] = pd.to_datetime(current_data['datetime'])
+
+                market_data = {'close': current_row['close'], 'df': current_data}
+
+                # Generate signal
                 signal = self.strategy.generate_signal(ticker, market_data)
 
-                # 2. Execute trade in the Portfolio (buy, sell, hold)
+                # Execute trade if signal is present
                 if signal:
-                    self.portfolio.handle_signal(ticker, signal, current_price=row['close'])
+                    self.portfolio.handle_signal(ticker, signal, current_price=current_row['close'], index=idx)
 
         # After the loop, print final metrics or logs
         self.logger.info("Backtest completed.")

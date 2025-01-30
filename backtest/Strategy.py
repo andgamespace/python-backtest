@@ -1,5 +1,6 @@
 from typing import Any
 import logging
+import pandas as pd
 
 def _setup_logger():
     logger = logging.getLogger('Strategy')
@@ -47,10 +48,14 @@ class SimpleMovingAverageStrategy(Strategy):
         Generate 'BUY' or 'SELL' signals based on moving average crossover.
         """
         current_close = market_data['close']
-        df = market_data['df']  # Assume market_data includes the DataFrame up to current point
+        df = market_data['df']  # Ensure 'df' is a pd.DataFrame
 
-        short_ma = df['close'].rolling(window=self.short_window).mean().iloc[-1]
-        long_ma = df['close'].rolling(window=self.long_window).mean().iloc[-1]
+        if not isinstance(df, pd.DataFrame):
+            logger.error(f"Market data for {ticker} is not a DataFrame.")
+            return None
+
+        short_ma = df['SMA_5'].iloc[-1]
+        long_ma = df['SMA_20'].iloc[-1]
 
         signal = None
 
@@ -65,4 +70,113 @@ class SimpleMovingAverageStrategy(Strategy):
         self.previous_short_ma = short_ma
         self.previous_long_ma = long_ma
 
+        return signal
+
+class RSIStrategy(Strategy):
+    """
+    Strategy based on Relative Strength Index (RSI).
+    Generates 'BUY' signal when RSI crosses above rsi_low.
+    Generates 'SELL' signal when RSI crosses below rsi_high.
+    """
+    def __init__(self, rsi_low: int = 30, rsi_high: int = 70):
+        super().__init__({'rsi_low': rsi_low, 'rsi_high': rsi_high})
+        self.rsi_low = rsi_low
+        self.rsi_high = rsi_high
+        self.previous_rsi = None
+        logger.info(f"{self.__class__.__name__} created with rsi_low={self.rsi_low} and rsi_high={self.rsi_high}")
+
+    def generate_signal(self, ticker: str, market_data: Any) -> str:
+        df = market_data['df']
+        current_rsi = df['RSI'].iloc[-1]
+        
+        if self.previous_rsi is None:
+            self.previous_rsi = current_rsi
+            return None
+
+        signal = None
+        if self.previous_rsi < self.rsi_low and current_rsi >= self.rsi_low:
+            signal = 'BUY'
+            logger.info(f"BUY signal generated for {ticker} based on RSI crossing above {self.rsi_low}.")
+        elif self.previous_rsi > self.rsi_high and current_rsi <= self.rsi_high:
+            signal = 'SELL'
+            logger.info(f"SELL signal generated for {ticker} based on RSI crossing below {self.rsi_high}.")
+
+        self.previous_rsi = current_rsi
+        return signal
+
+class MACDStrategy(Strategy):
+    """
+    Strategy based on Moving Average Convergence Divergence (MACD).
+    Generates 'BUY' signal when MACD crosses above the MACD signal line.
+    Generates 'SELL' signal when MACD crosses below the MACD signal line.
+    """
+    def __init__(self, fastperiod=12, slowperiod=26, signalperiod=9):
+        super().__init__({'fastperiod': fastperiod, 'slowperiod': slowperiod, 'signalperiod': signalperiod})
+        self.fastperiod = fastperiod
+        self.slowperiod = slowperiod
+        self.signalperiod = signalperiod
+        self.previous_macd = None
+        self.previous_macd_signal = None
+        logger.info(f"{self.__class__.__name__} created with fastperiod={self.fastperiod}, slowperiod={self.slowperiod}, signalperiod={self.signalperiod}")
+
+    def generate_signal(self, ticker: str, market_data: Any) -> str:
+        df = market_data['df']
+        current_macd = df['MACD'].iloc[-1]
+        current_macd_signal = df['MACD_Signal'].iloc[-1]
+
+        if self.previous_macd is None or self.previous_macd_signal is None:
+            self.previous_macd = current_macd
+            self.previous_macd_signal = current_macd_signal
+            return None
+
+        signal = None
+        if self.previous_macd <= self.previous_macd_signal and current_macd > current_macd_signal:
+            signal = 'BUY'
+            logger.info(f"BUY signal generated for {ticker} based on MACD crossover.")
+        elif self.previous_macd >= self.previous_macd_signal and current_macd < current_macd_signal:
+            signal = 'SELL'
+            logger.info(f"SELL signal generated for {ticker} based on MACD crossover.")
+
+        self.previous_macd = current_macd
+        self.previous_macd_signal = current_macd_signal
+        return signal
+
+class BollingerBandsStrategy(Strategy):
+    """
+    Strategy based on Bollinger Bands.
+    Generates 'BUY' signal when price crosses below the lower band.
+    Generates 'SELL' signal when price crosses above the upper band.
+    """
+    def __init__(self, window=20, num_std=2):
+        super().__init__({'window': window, 'num_std': num_std})
+        self.window = window
+        self.num_std = num_std
+        self.previous_close = None
+        self.previous_bb_lower = None
+        self.previous_bb_upper = None
+        logger.info(f"{self.__class__.__name__} created with window={self.window}, num_std={self.num_std}")
+
+    def generate_signal(self, ticker: str, market_data: Any) -> str:
+        df = market_data['df']
+        current_close = df['close'].iloc[-1]
+        current_bb_lower = df['BB_lower'].iloc[-1]
+        current_bb_upper = df['BB_upper'].iloc[-1]
+
+        if self.previous_close is None:
+            self.previous_close = current_close
+            self.previous_bb_lower = current_bb_lower
+            self.previous_bb_upper = current_bb_upper
+            return None
+
+        signal = None
+        if self.previous_close >= self.previous_bb_lower and current_close < current_bb_lower:
+            signal = 'BUY'
+            logger.info(f"BUY signal generated for {ticker} based on price crossing below BB_lower.")
+        elif self.previous_close <= self.previous_bb_upper and current_close > current_bb_upper:
+            signal = 'SELL'
+            logger.info(f"SELL signal generated for {ticker} based on price crossing above BB_upper.")
+
+        self.previous_close = current_close
+        self.previous_bb_lower = current_bb_lower
+        self.previous_bb_upper = current_bb_upper
         return signal

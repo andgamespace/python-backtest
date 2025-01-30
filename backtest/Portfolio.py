@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import pandas as pd
 from .Position import Position
 import numpy as np
@@ -14,7 +14,8 @@ class Portfolio:
         self.cash = initial_cash
         self.positions: Dict[str, Position] = {}
         self.history = []
-        self.trade_log = []
+        self.trade_log: List[tuple] = []  # (ticker, 'BUY'/'SELL', quantity, price, index)
+        self.data_loader = None  # Reference to DataLoader for visualization
         self.logger = self._setup_logger()
         self.logger.info(f"Portfolio initialized with initial_cash={self.initial_cash}")
 
@@ -27,17 +28,23 @@ class Portfolio:
             logger.setLevel(logging.INFO)
         return logger
 
-    def handle_signal(self, ticker, signal, current_price):
+    def set_data_loader(self, data_loader):
+        """
+        Set the DataLoader reference for accessing data during visualization.
+        """
+        self.data_loader = data_loader
+
+    def handle_signal(self, ticker, signal, current_price, index):
         """
         Takes a signal from the Engine and updates positions accordingly.
         """
         self.logger.info(f"Handling signal '{signal}' for ticker '{ticker}' at price {current_price}")
         if signal == 'BUY':
-            self._open_or_add_position(ticker, current_price)
+            self._open_or_add_position(ticker, current_price, index)
         elif signal == 'SELL':
-            self._close_or_reduce_position(ticker, current_price)
+            self._close_or_reduce_position(ticker, current_price, index)
 
-    def _open_or_add_position(self, ticker, price):
+    def _open_or_add_position(self, ticker, price, index):
         """
         Example logic for a market buy.
         """
@@ -61,12 +68,12 @@ class Portfolio:
         self.positions[ticker].quantity = new_qty
         self.positions[ticker].entry_price = avg_price
         self.cash -= cost
-        self.trade_log.append((ticker, 'BUY', quantity, price))
+        self.trade_log.append((ticker, 'BUY', quantity, price, index))
 
         self.logger.info(f"Bought {quantity} shares of {ticker} at {price}. "
                          f"New quantity: {new_qty}, average price: {avg_price}")
 
-    def _close_or_reduce_position(self, ticker, price):
+    def _close_or_reduce_position(self, ticker, price, index):
         """
         Example logic for a market sell, selling entire position by default.
         """
@@ -78,7 +85,7 @@ class Portfolio:
         proceeds = price * quantity_to_sell
 
         self.cash += proceeds
-        self.trade_log.append((ticker, 'SELL', quantity_to_sell, price))
+        self.trade_log.append((ticker, 'SELL', quantity_to_sell, price, index))
 
         self.logger.info(f"Sold {quantity_to_sell} shares of {ticker} at {price}. "
                          f"Cash += {proceeds}")
@@ -114,7 +121,7 @@ class Portfolio:
         self.logger.info(f"Can trade {'Yes' if can_trade else 'No'} for {quantity} shares of {ticker} at {price}.")
         return can_trade
 
-    def execute_trade(self, ticker: str, quantity: int, price: float) -> bool:
+    def execute_trade(self, ticker: str, quantity: int, price: float, index: int) -> bool:
         """Execute a trade (positive quantity for buy, negative for sell)."""
         cost = quantity * price
 
@@ -142,9 +149,12 @@ class Portfolio:
         self.cash -= cost
         self.logger.info(f"Executed trade for {ticker}: quantity={quantity}, price={price}. New cash balance: {self.cash}")
 
-        # Record trade
+        # Record trade with index
+        self.trade_log.append((ticker, 'BUY' if quantity > 0 else 'SELL', quantity, price, index))
+
+        # Record history with proper datetime
         self.history.append({
-            'timestamp': pd.Timestamp.now(),
+            'timestamp': pd.to_datetime('now'),
             'ticker': ticker,
             'quantity': quantity,
             'price': price,

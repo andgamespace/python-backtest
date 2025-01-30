@@ -1,7 +1,7 @@
 """Initialization of the Python backtesting package."""
 
 from .DataLoader import DataLoader
-from .Strategy import Strategy, SimpleMovingAverageStrategy
+from .Strategy import Strategy, SimpleMovingAverageStrategy, RSIStrategy, MACDStrategy, BollingerBandsStrategy
 from .Portfolio import Portfolio
 from .Engine import Engine
 from .Orders import Order, OrderType
@@ -25,6 +25,9 @@ __all__ = [
     'DataLoader',
     'Strategy',
     'SimpleMovingAverageStrategy',
+    'RSIStrategy',
+    'MACDStrategy',
+    'BollingerBandsStrategy',
     'Portfolio',
     'Engine',
     'Order',
