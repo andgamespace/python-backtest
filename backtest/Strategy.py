@@ -1,6 +1,8 @@
-from typing import Any
+from typing import Any, Optional
 import logging
 import pandas as pd
+from sklearn.linear_model import LogisticRegression  # Example ML model
+from typing import List
 
 def _setup_logger():
     logger = logging.getLogger('Strategy')
@@ -24,7 +26,7 @@ class Strategy:
 
     def generate_signal(self, ticker: str, market_data: Any) -> str:
         """
-        Return 'BUY', 'SELL', or None. 
+        Return 'BUY', 'SELL', or None.
         market_data can be a row of the DataFrame or other relevant info.
         """
         # Example: Always return None, to be overridden by actual strategies.
@@ -179,4 +181,58 @@ class BollingerBandsStrategy(Strategy):
         self.previous_close = current_close
         self.previous_bb_lower = current_bb_lower
         self.previous_bb_upper = current_bb_upper
+        return signal
+
+class MLStrategy(Strategy):
+    """
+    Machine Learning Strategy - expects a pre-trained model to be passed during initialization.
+    """
+    def __init__(self, model, feature_columns: List[str]): # Expects a pre-trained model and feature columns
+        super().__init__()
+        self.model = model # Now expects a pre-trained model to be passed
+        self.feature_columns = feature_columns
+        logger.info(f"{self.__class__.__name__} initialized with pre-trained model, using features: {self.feature_columns}")
+        if not hasattr(model, 'predict_proba'):
+            logger.error("Provided model does not have 'predict_proba' method. MLStrategy requires a model with probability predictions.")
+            raise ValueError("Model must have 'predict_proba' method for MLStrategy.")
+
+    def generate_signal(self, ticker: str, market_data: Any) -> Optional[str]:
+        """
+        Generate 'BUY' or 'SELL' signals based on ML model prediction.
+        Uses the pre-trained model passed during initialization.
+
+        Important:
+          1. Ensure the 'model' passed is a PRE-TRAINED model.
+          2. Features used for training MUST be the same as 'feature_columns'.
+          3. Feature scaling used during training MUST be applied to 'market_data' here.
+        """
+        df = market_data['df']
+
+        # Check if feature columns are available in market data
+        for col in self.feature_columns:
+            if col not in df.columns:
+                logger.warning(f"Feature column '{col}' missing in market data for {ticker}. ML strategy cannot generate signal.")
+                return None
+
+        features = df[self.feature_columns].iloc[[-1]] # Get the latest row's features
+
+        try:
+            prediction_proba = self.model.predict_proba(features) # Get probabilities
+            # Assuming binary classification (BUY/SELL) and index 1 corresponds to 'BUY' probability
+            buy_probability = prediction_proba[0][1]
+
+            if buy_probability > 0.6: # Example threshold - adjust as needed
+                signal = 'BUY'
+                logger.info(f"ML Strategy: BUY signal generated for {ticker} with probability {buy_probability:.2f}.")
+            elif buy_probability < 0.4: # Example threshold for SELL
+                signal = 'SELL'
+                logger.info(f"ML Strategy: SELL signal generated for {ticker} with probability {buy_probability:.2f}.")
+            else:
+                signal = None # Neutral signal if probability is within the threshold
+                logger.info(f"ML Strategy: Neutral signal generated for {ticker} with probability {buy_probability:.2f}.")
+
+        except Exception as e:
+            logger.error(f"Error during model prediction for {ticker}: {e}. No signal generated.")
+            return None
+
         return signal
