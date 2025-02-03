@@ -1,16 +1,11 @@
 import logging
 from typing import Dict, Any
 import pandas as pd
+import multiprocessing
 
 class Engine:
     """
-    Engine orchestrates the entire backtest loop.
-    It:
-      1. Takes a loaded DataLoader.
-      2. Accepts a Strategy instance.
-      3. Iterates over each timestamp in the loaded data.
-      4. Sends signals to Portfolio.
-      5. Calculates metrics and logs stats.
+    Engine orchestrates the entire backtest loop, now with concurrency and order processing.
     """
 
     def __init__(self, data_loader, portfolio, strategy, logger=None):
@@ -29,44 +24,63 @@ class Engine:
             logger.setLevel(logging.INFO)
         return logger
 
+    def _run_backtest_single_ticker(self, ticker):
+        """
+        Run backtest for a single ticker, including order processing at each step.
+        """
+        self.logger.info(f"Starting backtest for ticker: {ticker} in process {multiprocessing.current_process().name}")
+        df = self._get_data(ticker)
+        if df.empty:
+            return
+
+        for idx in range(len(df)):
+            current_row = df.iloc[idx]
+            current_data = df.iloc[:idx+1]
+            current_time = current_row['datetime'] # Get current datetime for order processing
+            current_price = current_row['close']
+
+            # Ensure 'datetime' is datetime type
+            if not pd.api.types.is_datetime64_any_dtype(current_data['datetime']):
+                current_data['datetime'] = pd.to_datetime(current_data['datetime'])
+
+            market_data = {'close': current_price, 'df': current_data}
+
+            # Process pending orders before generating new signals
+            current_prices_for_processing = {ticker: current_price} # For now, process orders based on current ticker price only
+            self.portfolio.process_orders(current_time, current_prices_for_processing) # Process orders at each time step
+
+            # Generate signal
+            signal = self.strategy.generate_signal(ticker, market_data)
+
+            # Execute trade if signal is present (default Market order for now)
+            if signal:
+                self.portfolio.handle_signal(ticker, signal, current_price=current_price, index=idx) # Default Market order
+
+        # Process any remaining pending orders at the end of backtest - optional, depends on strategy
+        # current_prices_end = {ticker: self._get_data(ticker)['close'].iloc[-1]} # Get last prices - careful with look-ahead bias
+        # self.portfolio.process_orders("End of Backtest", current_prices_end)
+
+        self.logger.info(f"Backtest for ticker {ticker} completed in process {multiprocessing.current_process().name}")
+
+
     def run_backtest(self, tickers):
         """
-        Main loop over each timestamp across all tickers to simulate trades concurrently.
-
-        Args:
-            tickers (list): List of stock symbols to run the strategy on.
+        Main loop to run backtest for all tickers concurrently using multiprocessing.
         """
-        self.logger.info(f"Starting backtest for tickers: {tickers}")
+        self.logger.info(f"Starting concurrent backtest for tickers: {tickers}")
+        processes = []
 
-        # Determine the maximum length of data among all tickers
-        max_length = max(len(self._get_data(ticker)) for ticker in tickers)
+        for ticker in tickers:
+            process = multiprocessing.Process(target=self._run_backtest_single_ticker, args=(ticker,))
+            processes.append(process)
+            process.start()
 
-        # Iterate over each timestamp index
-        for idx in range(max_length):
-            for ticker in tickers:
-                df = self._get_data(ticker)
-                if df.empty or idx >= len(df):
-                    continue
+        for process in processes:
+            process.join() # Wait for all processes to complete
 
-                current_row = df.iloc[idx]
-                current_data = df.iloc[:idx+1]
-
-                # Ensure 'datetime' is datetime type
-                if not pd.api.types.is_datetime64_any_dtype(current_data['datetime']):
-                    current_data['datetime'] = pd.to_datetime(current_data['datetime'])
-
-                market_data = {'close': current_row['close'], 'df': current_data}
-
-                # Generate signal
-                signal = self.strategy.generate_signal(ticker, market_data)
-
-                # Execute trade if signal is present
-                if signal:
-                    self.portfolio.handle_signal(ticker, signal, current_price=current_row['close'], index=idx)
-
-        # After the loop, print final metrics or logs
-        self.logger.info("Backtest completed.")
+        self.logger.info("Concurrent backtest completed for all tickers.")
         self.portfolio.calculate_final_metrics()
+
 
     def _get_data(self, ticker):
         """
