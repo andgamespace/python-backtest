@@ -18,7 +18,7 @@ logger = _setup_logger()
 def plot_signals(df, signals):
     """
     Plot the stock price and overlay buy/sell signals.
-    
+
     df: DataFrame containing columns 'datetime' and 'close'
     signals: list of (index, signal_type) or similar
     """
@@ -57,7 +57,7 @@ def plot_portfolio(portfolio_value_series):
 def plot_strategy_results(portfolio: Portfolio, ticker: str, strategy_name: str):
     """
     Plot buy/sell signals and portfolio value for a specific strategy and ticker.
-    
+
     Args:
         portfolio (Portfolio): The portfolio instance containing trade logs.
         ticker (str): The stock ticker.
@@ -75,16 +75,18 @@ def plot_strategy_results(portfolio: Portfolio, ticker: str, strategy_name: str)
 
     # Plot Buy signals
     if buy_signals:
-        buy_dates = [df['datetime'].iloc[idx] for idx, _ in buy_signals]
-        buy_prices = [df['close'].iloc[idx] for idx, _ in buy_signals]
+        # Corrected line: Extract index from the last element of the trade log tuple (index is at position 5, index starts from 0)
+        buy_dates = [df['datetime'].iloc[trade[5]] for trade in buy_signals]
+        buy_prices = [df['close'].iloc[trade[5]] for trade in buy_signals]
         plt.scatter(buy_dates, buy_prices, marker='^', color='green', label='BUY Signal', s=100)
 
     # Plot Sell signals
     if sell_signals:
-        sell_dates = [df['datetime'].iloc[idx] for idx, _ in sell_signals]
-        sell_prices = [df['close'].iloc[idx] for idx, _ in sell_signals]
+        # Corrected line: Extract index from the last element of the trade log tuple
+        sell_dates = [df['datetime'].iloc[trade[5]] for trade in sell_signals]
+        sell_prices = [df['close'].iloc[trade[5]] for trade in sell_signals]
         plt.scatter(sell_dates, sell_prices, marker='v', color='red', label='SELL Signal', s=100)
-    
+
     plt.title(f"{ticker} Price with Buy/Sell Signals - {strategy_name}")
     plt.xlabel("Datetime")
     plt.ylabel("Price")
@@ -95,7 +97,7 @@ def plot_strategy_results(portfolio: Portfolio, ticker: str, strategy_name: str)
 def plot_portfolio_over_time(portfolio: Portfolio, strategy_name: str):
     """
     Plot the portfolio value over time for a specific strategy.
-    
+
     Args:
         portfolio (Portfolio): The portfolio instance containing historical values.
         strategy_name (str): Name of the strategy.
@@ -117,7 +119,7 @@ def plot_portfolio_over_time(portfolio: Portfolio, strategy_name: str):
 def plot_all_strategies_results(portfolios: Dict[str, Portfolio], tickers: List[str]):
     """
     Plot buy/sell signals and portfolio value for all strategies and tickers.
-    
+
     Args:
         portfolios (Dict[str, Portfolio]): Dictionary of portfolio instances keyed by strategy name.
         tickers (List[str]): List of stock tickers.

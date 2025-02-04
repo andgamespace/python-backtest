@@ -6,6 +6,9 @@ from backtest import RSIStrategy, MACDStrategy, BollingerBandsStrategy
 from backtest.utils import risk_management
 from backtest.Orders import Order, OrderType # Import Order and OrderType for tests
 import io # Import io for testing CSV data
+from unittest.mock import patch
+import matplotlib.pyplot as plt  # Import pyplot for visual tests
+from backtest.visuals import plot_signals, plot_portfolio, plot_strategy_results, plot_portfolio_over_time, plot_all_strategies_results # Import visual functions
 
 
 class TestBacktestingFramework(unittest.TestCase):
@@ -282,6 +285,106 @@ class TestBacktestingFramework(unittest.TestCase):
         df_nan_values = data_loader.read_stock_data([csv_data_nan_values], 'TEST_NAN_VALUES', structure=['datetime', 'open', 'high', 'low', 'close', 'volume'], sep=';')
         self.assertFalse(df_nan_values.isnull().any().any(), "DataLoader should fill NaN values.")
         self.assertFalse(df_nan_values.empty, "DataLoader should still return df after filling NaNs.")
+
+    @patch('matplotlib.pyplot.show')  # Mock plt.show to prevent plots from displaying during tests
+    def test_plot_signals_visual(self, mock_show):
+        """
+        Test plot_signals function from visuals.py.
+        """
+        # Create dummy data
+        data = {'datetime': pd.to_datetime(['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04', '2024-01-05']),
+                'close': [150, 152, 148, 155, 153]}
+        df = pd.DataFrame(data)
+        signals = [(1, 'BUY'), (3, 'SELL')]
+
+        try:
+            plot_signals(df, signals)
+            self.assertTrue(True, "plot_signals ran without errors") # If it reaches here, no error occurred
+            self.assertTrue(mock_show.called, "plt.show was called") # Check if plt.show was called (plot attempted to display)
+        except Exception as e:
+            self.fail(f"plot_signals raised an exception: {e}")
+
+    @patch('matplotlib.pyplot.show')
+    def test_plot_portfolio_visual(self, mock_show):
+        """
+        Test plot_portfolio function from visuals.py.
+        """
+        # Create dummy portfolio value series
+        dates = pd.to_datetime(['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04', '2024-01-05'])
+        portfolio_value_series = pd.Series([100000, 101000, 99000, 102000, 103000], index=dates)
+
+        try:
+            plot_portfolio(portfolio_value_series)
+            self.assertTrue(True, "plot_portfolio ran without errors")
+            self.assertTrue(mock_show.called, "plt.show was called")
+        except Exception as e:
+            self.fail(f"plot_portfolio raised an exception: {e}")
+
+    @patch('matplotlib.pyplot.show')
+    def test_plot_strategy_results_visual(self, mock_show):
+        """
+        Test plot_strategy_results function."""
+        portfolio = Portfolio(initial_cash=100000)
+        portfolio.set_data_loader(self.data_loader)
+        # Dummy trade log and data (adjust as needed for a realistic scenario)
+        portfolio.trade_log = [('AMD', 'BUY', 10, 150, 150, 1), ('AMD', 'SELL', 10, 160, 160, 3)]
+        data = {'datetime': pd.to_datetime(['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04', '2024-01-05']),
+                'close': [150, 152, 148, 155, 153]}
+        self.data_loader.data['AMD'] = pd.DataFrame(data) # Mock data in data_loader for test
+        portfolio.data_loader = self.data_loader # Set data loader in portfolio
+
+        try:
+            plot_strategy_results(portfolio, 'AMD', 'SMAStrategy')
+            self.assertTrue(True, "plot_strategy_results ran without errors")
+            self.assertTrue(mock_show.called, "plt.show was called")
+        except Exception as e:
+            self.fail(f"plot_strategy_results raised an exception: {e}")
+
+    @patch('matplotlib.pyplot.show')
+    def test_plot_portfolio_over_time_visual(self, mock_show):
+        """Test plot_portfolio_over_time function."""
+        portfolio = Portfolio(initial_cash=100000)
+        # Dummy historical data
+        portfolio.history = [
+            {'timestamp': pd.to_datetime('2024-01-01'), 'portfolio_value': 100000},
+            {'timestamp': pd.to_datetime('2024-01-02'), 'portfolio_value': 101000},
+            {'timestamp': pd.to_datetime('2024-01-03'), 'portfolio_value': 102000}
+        ]
+        portfolio._update_portfolio_history()
+
+        try:
+            plot_portfolio_over_time(portfolio, 'SMAStrategy')
+            self.assertTrue(True, "plot_portfolio_over_time ran without errors")
+            self.assertTrue(mock_show.called, "plt.show was called")
+        except Exception as e:
+            self.fail(f"plot_portfolio_over_time raised an exception: {e}")
+
+    @patch('matplotlib.pyplot.show')
+    def test_plot_all_strategies_results_visual(self, mock_show):
+        """Test plot_all_strategies_results function."""
+        portfolios = {
+            'SMAStrategy': Portfolio(initial_cash=100000),
+            'RSIStrategy': Portfolio(initial_cash=100000)
+        }
+        tickers = ['AMD', 'NVDA']
+        # Mock data in data_loader (similar to test_plot_strategy_results_visual if needed)
+        for strat_name, port in portfolios.items():
+            port.set_data_loader(self.data_loader)
+            port.trade_log = [('AMD', 'BUY', 10, 150, 150, 1), ('AMD', 'SELL', 10, 160, 160, 3)] # Dummy trade logs
+            port.history = [{'timestamp': pd.to_datetime('2024-01-01'), 'portfolio_value': 100000}] # Dummy history
+            port._update_portfolio_history()
+        data = {'datetime': pd.to_datetime(['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04', '2024-01-05']),
+                'close': [150, 152, 148, 155, 153]}
+        self.data_loader.data['AMD'] = pd.DataFrame(data)
+        self.data_loader.data['NVDA'] = pd.DataFrame(data)
+
+
+        try:
+            plot_all_strategies_results(portfolios, tickers)
+            self.assertTrue(True, "plot_all_strategies_results ran without errors")
+            self.assertTrue(mock_show.called, "plt.show was called at least once (as it's called internally)")
+        except Exception as e:
+            self.fail(f"plot_all_strategies_results raised an exception: {e}")
 
 
 if __name__ == '__main__':
